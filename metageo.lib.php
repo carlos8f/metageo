@@ -2,19 +2,19 @@
 
 function metageo_insert($args) {
   global $prog, $db;
-  if (empty($args['file']) && empty($args['input'])) metageo_exit("must specify --file=inputfile or --input={geojson}");
-  if (empty($args['name'])) metageo_exit("must specify --name=metadataname");
+  if (empty($args['file']) && empty($args['input'])) return metageo_error("must specify --file=inputfile or --input={geojson}");
+  if (empty($args['name'])) return metageo_error("must specify --name=metadataname");
   if (!empty($args['file'])) {
     if (!metageo_is_cli()) {
-      exit("--file can only be used on cli.\n");
+      return metageo_error("--file can only be used on cli.");
     }
-    if (!file_exists($args['file'])) metageo_exit("--file does not exist.");
+    if (!file_exists($args['file'])) return metageo_error("--file does not exist.");
     if (!empty($args['convert'])) {
       exec('whereis ogr2ogr', $output, $ret);
-      if ($ret || empty($output) || !preg_match('~ogr2ogr: [^\w]~', $output[0])) metageo_exit("ogr2ogr command not found.");
+      if ($ret || empty($output) || !preg_match('~ogr2ogr: [^\w]~', $output[0])) return metageo_error("ogr2ogr command not found.");
       $tmp = sys_get_temp_dir() .'/'. $prog .'_'. md5(time() . mt_rand());
       exec(sprintf('ogr2ogr %s -f "GeoJSON" %s', escapeshellarg($tmp), escapeshellarg($args['file'])), $output, $ret);
-      if ($ret) metageo_exit("unable to convert input file.");
+      if ($ret) return metageo_error("unable to convert input file.");
       $args['file'] = $tmp;
     }
     $raw = file_get_contents($args['file']);
@@ -27,7 +27,7 @@ function metageo_insert($args) {
   elseif (!empty($args['input'])) {
     $input = json_decode($args['input'], TRUE);
   }
-  if (empty($input) || empty($input['features'])) metageo_exit("unable to parse input.");
+  if (empty($input) || empty($input['features'])) return metageo_error("unable to parse input.");
  
   foreach ($input['features'] as $feature) {
     if ($feature['type'] == 'FeatureCollection') {
@@ -44,7 +44,7 @@ function metageo_insert($args) {
   $db->features->ensureIndex(array('name' => 1));
 
   if (!empty($args['convert'])) @unlink($tmp);
-  metageo_exit('insert ok.', 0);
+  return 'insert ok.';
 }
 
 function metageo_save_feature($feature, $name) {
@@ -95,7 +95,7 @@ function metageo_find($args) {
         $args['location'] = $geocode;
       }
       else {
-        metageo_exit("unable to geocode location.");
+        return metageo_error("unable to geocode location.");
       }
     }
     $conditions += array('center' => array('$near' => $args['location']));
@@ -113,7 +113,7 @@ function metageo_find($args) {
   }
   if (!empty($args['conditions'])) {
     if (!$extra_cond = json_decode($args['conditions'], TRUE)) {
-      metageo_exit("unable to parse --conditions.");
+      return metageo_error("unable to parse --conditions.");
     }
     $conditions += $extra_cond;
   }
@@ -142,13 +142,15 @@ function metageo_find($args) {
       $ret[] = $feature;
     }
   }
-  metageo_response($ret);
+  return $ret;
 }
 
 function metageo_find_within($conditions) {
   global $db, $args;
 
-  $reader = metageo_wkt_reader();
+  if (!$reader = metageo_wkt_reader()) {
+    return FALSE;
+  }
   $ret = array();
   $skip = 0;
   $limit = 100;
@@ -201,9 +203,9 @@ function metageo_find_within($conditions) {
 function metageo_wkt_reader() {
   static $reader;
   if (isset($reader)) return $reader;
-  if (!extension_loaded('geos')) metageo_exit("requires geos extension.");
+  if (!extension_loaded('geos')) return metageo_error("geos extension required.");
   if (!$reader = new GEOSWKTReader()) {
-    metageo_exit("unable to initialize WKT reader.");
+    return metageo_error("unable to initialize WKT reader.");
   }
   return $reader;
 }
@@ -248,6 +250,7 @@ function metageo_remove($args) {
   global $db;
   if (empty($args['name'])) metageo_exit("--name required.");
   $db->features->remove(array('name' => $args['name']));
+  return 'remove OK.';
 }
 
 function metageo_geocode($location) {
@@ -340,22 +343,26 @@ function metageo_response($resp) {
   }
 }
 
-function metageo_exit($message, $status = 1) {
+function metageo_exit($message, $ok = FALSE) {
   if (metageo_is_cli()) {
     print $message ."\n";
     exit($status);
   }
   else {
-    if ($status) {
-      metageo_response(array('ok' => FALSE, 'message' => $message));
-    }
-    else {
-      metageo_response(array('ok' => TRUE, 'message' => $message));
-    }
+    metageo_response(array('ok' => (bool) $ok, 'message' => $message));
     exit();
   }
 }
 
 function metageo_is_cli() {
   return php_sapi_name() === 'cli';
+}
+
+function metageo_error($message = NULL) {
+  static $_message = NULL;
+  if ($message) {
+    $_message = $message;
+    return FALSE;
+  }
+  return $_message;
 }
