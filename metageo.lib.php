@@ -118,10 +118,13 @@ function metageo_find($args) {
     $conditions += $extra_cond;
   }
 
-  $ret = array();
+  $ret = array(
+    'type' => 'FeatureCollection',
+    'features' => array(),
+  );
 
   if (!empty($args['within'])) {
-    $ret = metageo_find_within($conditions);
+    $ret['features'] = metageo_find_within($conditions);
   }
   else {
     $result = $db->features->find($conditions);
@@ -135,13 +138,14 @@ function metageo_find($args) {
           break;
         }
       }
-      if (empty($args['geometry'])) {
+      if (!empty($args['no-geometry'])) {
         unset($feature['geometry']);
       }
       $feature['_id'] .= '';
-      $ret[] = $feature;
+      $ret['features'][] = $feature;
     }
   }
+
   return $ret;
 }
 
@@ -177,7 +181,7 @@ function metageo_find_within($conditions) {
         $wkt = metageo_geometry_to_wkt($feature['geometry']);
         $g2 = $reader->read($wkt);
         if ($g1->within($g2)) {
-          if (empty($args['geometry'])) {
+          if (!empty($args['no-geometry'])) {
             unset($feature['geometry']);
           }
           $feature['_id'] .= '';
