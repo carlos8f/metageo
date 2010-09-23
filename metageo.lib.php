@@ -5,6 +5,9 @@ function metageo_insert($args) {
   if (empty($args['file']) && empty($args['input'])) metageo_exit("must specify --file=inputfile or --input={geojson}");
   if (empty($args['name'])) metageo_exit("must specify --name=metadataname");
   if (!empty($args['file'])) {
+    if (!metageo_is_cli()) {
+      exit("--file can only be used on cli.\n");
+    }
     if (!file_exists($args['file'])) metageo_exit("--file does not exist.");
     if (!empty($args['convert'])) {
       exec('whereis ogr2ogr', $output, $ret);
