@@ -350,7 +350,7 @@ function metageo_response($resp) {
 function metageo_exit($message, $ok = FALSE) {
   if (metageo_is_cli()) {
     print $message ."\n";
-    exit($status);
+    exit($ok ? 0 : 1);
   }
   else {
     metageo_response(array('ok' => (bool) $ok, 'message' => $message));
