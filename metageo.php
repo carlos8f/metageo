@@ -24,14 +24,14 @@ if (empty($command)) {
 }
 
 switch ($command) {
-  case 'insert': $ret = metageo_insert($args); break;
-  case 'find': $ret = metageo_find($args); break;
+  case 'insert': $ret = metageo_do_insert($args); break;
+  case 'find': $ret = metageo_do_find($args); break;
   case 'remove':
     if (!metageo_is_cli()) {
       $ret = metageo_error("remove command only available from cli.");
     }
     else {
-      $ret = metageo_remove($args);
+      $ret = metageo_do_remove($args);
     }
     break;
   default: $ret = metageo_error("invalid command.");

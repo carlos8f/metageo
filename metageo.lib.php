@@ -1,6 +1,6 @@
 <?php
 
-function metageo_insert($args) {
+function metageo_do_insert($args) {
   global $prog, $db;
   if (empty($args['file']) && empty($args['input'])) return metageo_error("must specify file=inputfile or input={geojson}");
   if (empty($args['name'])) return metageo_error("must specify name=metadataname");
@@ -28,9 +28,6 @@ function metageo_insert($args) {
     $input = json_decode($args['input'], TRUE);
   }
   if (empty($input) || empty($input['features'])) return metageo_error("unable to parse input.");
- 
-  var_dump(count($input['features']));
-  exit();
  
   foreach ($input['features'] as $feature) {
     if ($feature['type'] == 'FeatureCollection') {
@@ -82,7 +79,7 @@ function metageo_expand_bounds($point, &$bounds) {
   $bounds['max_y'] = max($point[1], $bounds['max_y']);
 }
 
-function metageo_find($args) {
+function metageo_do_find($args) {
   global $prog, $db;
   $conditions = array();
   if (!empty($args['location'])) {
@@ -127,7 +124,7 @@ function metageo_find($args) {
   );
 
   if (!empty($args['within'])) {
-    $ret['features'] = metageo_find_within($conditions);
+    $ret['features'] = metageo_find_within($conditions, $args);
   }
   else {
     $result = $db->features->find($conditions);
@@ -152,8 +149,8 @@ function metageo_find($args) {
   return $ret;
 }
 
-function metageo_find_within($conditions) {
-  global $db, $args;
+function metageo_find_within($conditions, $args) {
+  global $db;
 
   if (!$reader = metageo_wkt_reader()) {
     return FALSE;
@@ -253,7 +250,7 @@ function metageo_geometry_to_wkt($geometry) {
   }
 }
 
-function metageo_remove($args) {
+function metageo_do_remove($args) {
   global $db;
   if (empty($args['name'])) metageo_exit("name required.");
   $db->features->remove(array('name' => $args['name']));
