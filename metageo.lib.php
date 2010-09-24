@@ -2,13 +2,13 @@
 
 function metageo_insert($args) {
   global $prog, $db;
-  if (empty($args['file']) && empty($args['input'])) return metageo_error("must specify --file=inputfile or --input={geojson}");
-  if (empty($args['name'])) return metageo_error("must specify --name=metadataname");
+  if (empty($args['file']) && empty($args['input'])) return metageo_error("must specify file=inputfile or input={geojson}");
+  if (empty($args['name'])) return metageo_error("must specify name=metadataname");
   if (!empty($args['file'])) {
     if (!metageo_is_cli()) {
-      return metageo_error("--file can only be used on cli.");
+      return metageo_error("file can only be used on cli.");
     }
-    if (!file_exists($args['file'])) return metageo_error("--file does not exist.");
+    if (!file_exists($args['file'])) return metageo_error("file does not exist.");
     if (!empty($args['convert'])) {
       exec('whereis ogr2ogr', $output, $ret);
       if ($ret || empty($output) || !preg_match('~ogr2ogr: [^\w]~', $output[0])) return metageo_error("ogr2ogr command not found.");
@@ -28,6 +28,9 @@ function metageo_insert($args) {
     $input = json_decode($args['input'], TRUE);
   }
   if (empty($input) || empty($input['features'])) return metageo_error("unable to parse input.");
+ 
+  var_dump(count($input['features']));
+  exit();
  
   foreach ($input['features'] as $feature) {
     if ($feature['type'] == 'FeatureCollection') {
@@ -113,7 +116,7 @@ function metageo_find($args) {
   }
   if (!empty($args['conditions'])) {
     if (!$extra_cond = json_decode($args['conditions'], TRUE)) {
-      return metageo_error("unable to parse --conditions.");
+      return metageo_error("unable to parse conditions.");
     }
     $conditions += $extra_cond;
   }
@@ -252,7 +255,7 @@ function metageo_geometry_to_wkt($geometry) {
 
 function metageo_remove($args) {
   global $db;
-  if (empty($args['name'])) metageo_exit("--name required.");
+  if (empty($args['name'])) metageo_exit("name required.");
   $db->features->remove(array('name' => $args['name']));
   return 'remove OK.';
 }
@@ -336,14 +339,23 @@ function metageo_response($resp) {
     var_dump($resp);
   }
   else {
+    header('Cache-Control: public, max-age=86400');
+    header('Vary: Accept-Encoding');
     header('Content-Type: text/plain; charset=utf-8');
+    $gzip = (isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== FALSE) ? TRUE : FALSE;
+    $output = '';
     if (isset($args['callback'])) {
-      print $args['callback'] ."(\n\t";
+      $output .= $args['callback'] ."(\n\t";
     }
-    print json_encode($resp);
+    $output .= json_encode($resp);
     if (isset($args['callback'])) {
-      print "\n);";
+      $output .= "\n);";
     }
+    if ($gzip) {
+      header('Content-Encoding: gzip');
+      $output = gzencode($output);
+    }
+    return $output;
   }
 }
 

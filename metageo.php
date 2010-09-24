@@ -44,5 +44,5 @@ elseif (is_string($ret)) {
   metageo_exit($ret, TRUE);
 }
 else {
-  metageo_response($ret);
+  print metageo_response($ret);
 }
