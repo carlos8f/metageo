@@ -124,6 +124,9 @@ function metageo_do_find($args) {
   );
 
   if (!empty($args['within'])) {
+    if (empty($args['location'])) {
+      return metageo_error("within must also specify location.");
+    }
     $ret['features'] = metageo_find_within($conditions, $args);
   }
   else {
@@ -333,7 +336,14 @@ function distance($point1, $point2) {
 function metageo_response($resp) {
   global $args;
   if (metageo_is_cli()) {
-    var_dump($resp);
+    if (!empty($args['vardump'])) {
+      ob_start();
+      var_dump($resp);
+      return ob_get_clean();
+    }
+    else {
+      return json_encode($resp) ."\n";
+    }
   }
   else {
     header('Cache-Control: public, max-age=86400');
