@@ -372,7 +372,7 @@ function metageo_exit($message, $ok = FALSE) {
     exit($ok ? 0 : 1);
   }
   else {
-    metageo_response(array('ok' => (bool) $ok, 'message' => $message));
+    print metageo_response(array('ok' => (bool) $ok, 'message' => $message));
     exit();
   }
 }
