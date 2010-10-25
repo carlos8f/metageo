@@ -1,6 +1,7 @@
 <?php
 
 require 'metageo.lib.php';
+require 'config.php';
 
 ini_set('memory_limit', -1);
 
@@ -23,17 +24,14 @@ if (empty($command)) {
   metageo_exit("usage: $prog command [options]");
 }
 
+if ($command != 'find' && !metageo_is_cli() && METAGEO_SECRET_KEY && (empty($_REQUEST['key']) || $_REQUEST['key'] != METAGEO_SECRET_KEY)) {
+  metageo_exit("invalid key.");
+}
+
 switch ($command) {
   case 'insert': $ret = metageo_do_insert($args); break;
   case 'find': $ret = metageo_do_find($args); break;
-  case 'remove':
-    if (!metageo_is_cli()) {
-      $ret = metageo_error("remove command only available from cli.");
-    }
-    else {
-      $ret = metageo_do_remove($args);
-    }
-    break;
+  case 'remove': $ret = metageo_do_remove($args); break;
   default: $ret = metageo_error("invalid command.");
 }
 

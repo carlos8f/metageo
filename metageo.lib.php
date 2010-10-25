@@ -161,7 +161,6 @@ function metageo_find_within($conditions, $args) {
   $ret = array();
   $skip = 0;
   $limit = 100;
-  $out_of_bounds = 0;
   $point = $conditions['center']['$near'];
   $g1 = $reader->read(sprintf('POINT(%f %f)', $point[0], $point[1]));
 
@@ -172,11 +171,6 @@ function metageo_find_within($conditions, $args) {
     foreach ($result as $feature) {
       if ($point[0] < $feature['bbox'][0] || $point[0] > $feature['bbox'][2] || $point[1] < $feature['bbox'][1] || $point[1] > $feature['bbox'][3]) {
         // Point is out of bounds of this feature.
-        $out_of_bounds++;
-        if ($out_of_bounds - count($ret) == $limit) {
-          // After $limit out-of-bound's, give up.
-          return $ret;
-        }
         continue;
       }
       else {
@@ -203,7 +197,7 @@ function metageo_find_within($conditions, $args) {
       }
     }
     $skip += $limit;
-  } while ($result);
+  } while ($result->count(TRUE));
   return $ret;
 }
 
@@ -255,8 +249,9 @@ function metageo_geometry_to_wkt($geometry) {
 
 function metageo_do_remove($args) {
   global $db;
-  if (empty($args['name'])) metageo_exit("name required.");
-  $db->features->remove(array('name' => $args['name']));
+  if (empty($args['conditions'])) metageo_exit("conditions required.");
+  if (!$args['conditions'] = json_decode($args['conditions'], TRUE)) metageo_exit("unable to decode conditions.");
+  $db->features->remove($args['conditions']);
   return 'remove OK.';
 }
 
@@ -334,7 +329,7 @@ function distance($point1, $point2) {
 }
 
 function metageo_response($resp) {
-  global $args;
+  global $args, $prog;
   if (metageo_is_cli()) {
     if (!empty($args['vardump'])) {
       ob_start();
@@ -348,20 +343,41 @@ function metageo_response($resp) {
   else {
     header('Cache-Control: public, max-age=86400');
     header('Vary: Accept-Encoding');
-    header('Content-Type: text/plain; charset=utf-8');
     $gzip = (isset($_SERVER['HTTP_ACCEPT_ENCODING']) && strpos($_SERVER['HTTP_ACCEPT_ENCODING'], 'gzip') !== FALSE) ? TRUE : FALSE;
     $output = '';
-    if (isset($args['callback'])) {
-      $output .= $args['callback'] ."(\n\t";
+    if (!isset($args['format']) || $args['format'] == 'json' || $args['format'] == 'jsonp') {
+      header('Content-Type: text/plain; charset=utf-8');
+      if (isset($args['callback'])) {
+        $output .= $args['callback'] ."(\n\t";
+      }
+      $output .= json_encode($resp);
+      if (isset($args['callback'])) {
+        $output .= "\n);";
+      }
     }
-    $output .= json_encode($resp);
-    if (isset($args['callback'])) {
-      $output .= "\n);";
+    elseif (isset($args['format']) && $args['format'] == 'kml') {
+      exec('whereis ogr2ogr', $cmd_output, $ret);
+      if ($ret || empty($cmd_output) || !preg_match('~\s(/[^\s]*bin/[^\s]*)~', $cmd_output[0], $matches)) metageo_exit("ogr2ogr command not found.");
+      $ogr2ogr = $matches[1];
+      $tmp_geojson = sys_get_temp_dir() .'/'. $prog .'_'. md5(time() . mt_rand()) .'.json';
+      $tmp_kml = sys_get_temp_dir() .'/'. $prog .'_'. md5(time() . mt_rand()) .'.kml';
+      file_put_contents($tmp_geojson, json_encode($resp));
+      $cmd = sprintf('%s %s -f "KML" %s', $ogr2ogr, escapeshellarg($tmp_kml), escapeshellarg($tmp_geojson));
+      $cmd_output = array();
+      $ret = 0;
+      exec($cmd, $cmd_output, $ret);
+      if ($ret) metageo_exit("unable to convert to KML.");
+      $output = file_get_contents($tmp_kml);
+
+      @unlink($tmp_geojson);
+      @unlink($tmp_kml);
+      header('Content-Type: application/xml; charset=utf-8');
     }
     if ($gzip) {
       header('Content-Encoding: gzip');
       $output = gzencode($output);
     }
+    header('Content-Length: '. strlen($output));
     return $output;
   }
 }
@@ -372,7 +388,9 @@ function metageo_exit($message, $ok = FALSE) {
     exit($ok ? 0 : 1);
   }
   else {
-    print metageo_response(array('ok' => (bool) $ok, 'message' => $message));
+    header('Content-Type: text/plain; charset=utf-8');
+    $resp = array('ok' => (bool) $ok, 'message' => $message);
+    print json_encode($resp);
     exit();
   }
 }
