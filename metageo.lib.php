@@ -103,6 +103,9 @@ function metageo_do_find($args) {
   if (!empty($args['limit'])) {
     $args['limit'] = (int) $args['limit'];
   }
+  if (!empty($args['skip'])) {
+    $args['skip'] = (int) $args['skip'];
+  }
   if (!empty($args['name'])) {
     if (strpos($args['name'], ',') !== FALSE) {
       $conditions += array('name' => array('$in' => explode(',', $args['name'])));
@@ -133,6 +136,9 @@ function metageo_do_find($args) {
     $result = $db->features->find($conditions);
     if (!empty($args['limit'])) {
       $result->limit($args['limit']);
+    }
+    if (!empty($args['skip'])) {
+      $result->skip($args['skip']);
     }
     foreach ($result as $feature) {
       if (!empty($args['location'])) {
