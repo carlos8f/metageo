@@ -165,45 +165,70 @@ function metageo_find_within($conditions, $args) {
     return FALSE;
   }
   $ret = array();
-  $skip = 0;
-  $limit = 100;
+  $misses = 0;
+  if (!isset($args['max-misses'])) {
+    $args['max-misses'] = 100;
+  }
+
+  $names = (isset($args['name'])) ? array_flip(explode(',', $args['name'])) : FALSE;
+  if ($names) {
+    $args['limit'] = count($names);
+    // Keep track of misses per name.
+    $misses = array();
+    foreach ($names as $name => $val) {
+      $misses[$name] = 0;
+    }
+  }
+
   $point = $conditions['center']['$near'];
   $g1 = $reader->read(sprintf('POINT(%f %f)', $point[0], $point[1]));
 
-  $names = (isset($args['name'])) ? array_flip(explode(',', $args['name'])) : FALSE;
+  // Geo queries default to having limit=100. We set the limit to include *all* documents in
+  // the collection, so we can iterate the results freely and break as soon as we have our match.
+  $result = $db->features->find($conditions + array('geometry.type' => array('$in' => array('Polygon', 'MultiPolygon'))))->limit($db->features->count());
+  foreach ($result as $feature) {
+    if ($names && !isset($names[$feature['name']])) {
+      // This name has already been found, skip.
+      continue;
+    }
+    if ($point[0] >= $feature['bbox'][0] && $point[1] >= $feature['bbox'][1] && $point[0] <= $feature['bbox'][2] && $point[1] <= $feature['bbox'][3]) {
+      // Test that the point is within the polygon.
+      $wkt = metageo_geometry_to_wkt($feature['geometry']);
+      $g2 = $reader->read($wkt);
+      if ($g1->within($g2)) {
+        if (!empty($args['no-geometry'])) {
+          unset($feature['geometry']);
+        }
+        // Convert Mongo ID to string.
+        $feature['_id'] .= '';
 
-  do {
-    $result = $db->features->find($conditions + array('geometry.type' => array('$in' => array('Polygon', 'MultiPolygon'))))->limit($limit)->skip($skip);
-    foreach ($result as $feature) {
-      if ($point[0] < $feature['bbox'][0] || $point[0] > $feature['bbox'][2] || $point[1] < $feature['bbox'][1] || $point[1] > $feature['bbox'][3]) {
-        // Point is out of bounds of this feature.
+        $ret[] = $feature;
+        if (!empty($conditions['name'])) {
+          // If this is a name-based query, stop looking for this name.
+          unset($names[$feature['name']]);
+        }
+        if (isset($args['limit']) && count($ret) == $args['limit']) {
+          // Limit has been reached, return now.
+          break;
+        }
+        // A hit, continue searching.
         continue;
       }
-      else {
-        // Test that the point is within the polygon.
-        $wkt = metageo_geometry_to_wkt($feature['geometry']);
-        $g2 = $reader->read($wkt);
-        if ($g1->within($g2)) {
-          if (!empty($args['no-geometry'])) {
-            unset($feature['geometry']);
-          }
-          $feature['_id'] .= '';
-          $ret[] = $feature;
-          if ($names) {
-            unset($names[$feature['name']]);
-          }
-          // If all names have been found, return result.
-          if ($names === array()) {
-            return $ret;
-          }
-          elseif (!empty($args['limit']) && count($ret) == $args['limit']) {
-            return $ret;
-          }
-        }
-      }
     }
-    $skip += $limit;
-  } while ($result->count(TRUE));
+    // A miss.
+    if ($names) {
+      $misses[$feature['name']]++;
+      $miss_count = $misses[$feature['name']];
+    }
+    else {
+      $misses++;
+      $miss_count = $misses;
+    }
+    if ($miss_count > $args['max-misses']) {
+      break;
+    }
+  }
+
   return $ret;
 }
 
