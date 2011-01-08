@@ -85,7 +85,7 @@ function metageo_do_find($args) {
   if (!empty($args['location'])) {
     $args['location'] = explode(',', $args['location']);
     if (count($args['location']) == 2 && is_numeric($args['location'][0]) && is_numeric($args['location'][1])) {
-      // we have a long/lat, most likely.
+      // We have a long/lat, most likely.
       $args['location'][0] = (float) $args['location'][0];
       $args['location'][1] = (float) $args['location'][1];
     }
@@ -133,7 +133,11 @@ function metageo_do_find($args) {
     $ret['features'] = metageo_find_within($conditions, $args);
   }
   else {
-    $result = $db->features->find($conditions);
+    $fields = array('_id' => 0);
+    if (!empty($args['no-geometry'])) {
+      $fields['geometry'] = 0;
+    }
+    $result = $db->features->find($conditions, $fields);
     if (!empty($args['limit'])) {
       $result->limit($args['limit']);
     }
@@ -147,10 +151,6 @@ function metageo_do_find($args) {
           break;
         }
       }
-      if (!empty($args['no-geometry'])) {
-        unset($feature['geometry']);
-      }
-      $feature['_id'] .= '';
       $ret['features'][] = $feature;
     }
   }
@@ -165,67 +165,101 @@ function metageo_find_within($conditions, $args) {
     return FALSE;
   }
   $ret = array();
-  $misses = 0;
-  if (!isset($args['max-misses'])) {
-    $args['max-misses'] = 100;
-  }
 
-  $names = (isset($args['name'])) ? array_flip(explode(',', $args['name'])) : FALSE;
-  if ($names) {
-    $args['limit'] = count($names);
-    // Keep track of misses per name.
-    $misses = array();
-    foreach ($names as $name => $val) {
-      $misses[$name] = 0;
-    }
+  if (isset($args['name'])) {
+    $names = explode(',', $args['name']);
   }
+  else {
+    // Enumerate names.
+    $n = $db->command(array('distinct' => 'features', 'key' => 'name'));
+    $names = $n['values'];
+  }
+  // Create associative names array.
+  $names = array_combine($names, array_fill(0, count($names), array('in_bounds' => 0, 'features' => array(), 'geoms' => array())));
 
   $point = $conditions['center']['$near'];
   $g1 = $reader->read(sprintf('POINT(%f %f)', $point[0], $point[1]));
+  $fuzzyness = isset($args['fuzzyness']) ? (float) $args['fuzzyness'] : 0;
 
   // Geo queries default to having limit=100. We set the limit to include *all* documents in
-  // the collection, so we can iterate the results freely and break as soon as we have our match.
-  $result = $db->features->find($conditions + array('geometry.type' => array('$in' => array('Polygon', 'MultiPolygon'))))->limit($db->features->count());
+  // the collection, so we can iterate the results freely and break as soon as we have our matches.
+  $result = $db->features->find(
+    $conditions +
+    array(
+      'geometry.type' => array('$in' => array('Polygon', 'MultiPolygon')),
+      'bbox.0' => array('$lte' => $point[0] + $fuzzyness),
+      'bbox.1' => array('$lte' => $point[1] + $fuzzyness),
+      'bbox.2' => array('$gte' => $point[0] - $fuzzyness),
+      'bbox.3' => array('$gte' => $point[1] - $fuzzyness),
+    ),
+    array('_id' => 0)
+  )->limit($db->features->count());
+
   foreach ($result as $feature) {
-    if ($names && !isset($names[$feature['name']])) {
+    if (!isset($names[$feature['name']])) {
       // This name has already been found, skip.
       continue;
     }
-    if ($point[0] >= $feature['bbox'][0] && $point[1] >= $feature['bbox'][1] && $point[0] <= $feature['bbox'][2] && $point[1] <= $feature['bbox'][3]) {
-      // Test that the point is within the polygon.
-      $wkt = metageo_geometry_to_wkt($feature['geometry']);
-      $g2 = $reader->read($wkt);
-      if ($g1->within($g2)) {
-        if (!empty($args['no-geometry'])) {
-          unset($feature['geometry']);
-        }
-        // Convert Mongo ID to string.
-        $feature['_id'] .= '';
 
-        $ret[] = $feature;
-        if (!empty($conditions['name'])) {
-          // If this is a name-based query, stop looking for this name.
-          unset($names[$feature['name']]);
-        }
-        if (isset($args['limit']) && count($ret) == $args['limit']) {
-          // Limit has been reached, return now.
-          break;
-        }
-        // A hit, continue searching.
+    // Test that the point is within the polygon.
+    $wkt = metageo_geometry_to_wkt($feature['geometry']);
+    if (!empty($args['no-geometry'])) {
+      unset($feature['geometry']);
+    }
+    $g2 = $reader->read($wkt);
+    if ($g1->within($g2)) {
+      $ret[] = $feature;
+      unset($names[$feature['name']]);
+    }
+    elseif ($fuzzyness) {
+      // Save geometry for the fuzzy thing.
+      $names[$feature['name']]['features'][] = $feature;
+      $names[$feature['name']]['geoms'][] = $g2;
+      $names[$feature['name']]['in_bounds']++;
+    }
+
+    if (empty($names)) {
+      // All names have been found.
+      return $ret;
+    }
+  }
+
+  if ($fuzzyness) {
+    foreach ($names as &$name) {
+      if (empty($name['in_bounds'])) {
+        // No features were found in fuzzy bounds, so don't even try.
         continue;
       }
-    }
-    // A miss.
-    if ($names) {
-      $misses[$feature['name']]++;
-      $miss_count = $misses[$feature['name']];
-    }
-    else {
-      $misses++;
-      $miss_count = $misses;
-    }
-    if ($miss_count > $args['max-misses']) {
-      break;
+
+      $zoom = 100;
+      do {
+        // Create a 'fuzzy box' to use as an intersection point.
+        $fuzz = $fuzzyness / $zoom;
+        if ($fuzz > $fuzzyness) {
+          $fuzz = $fuzzyness;
+        }
+        $zoom = $zoom / 2;
+        $fuzzy_box = metageo_geometry_to_wkt(array(
+          'type' => 'Polygon',
+          'coordinates' => array(array(
+            array($point[0] - $fuzz, $point[1] - $fuzz),
+            array($point[0] - $fuzz, $point[1] + $fuzz),
+            array($point[0] + $fuzz, $point[1] + $fuzz),
+            array($point[0] + $fuzz, $point[1] - $fuzz),
+            array($point[0] - $fuzz, $point[1] - $fuzz),
+          )),
+        ));
+        $g1 = $reader->read($fuzzy_box);
+
+        // Feature is OK if it intersects the fuzzy box.
+        foreach ($name['geoms'] as $i => $g2) {
+          if ($g1->intersects($g2)) {
+            $ret[] = $name['features'][$i];
+            continue 3;
+          }
+        }
+      }
+      while ($fuzz != $fuzzyness);
     }
   }
 
