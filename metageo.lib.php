@@ -28,7 +28,11 @@ function metageo_do_insert($args) {
     $input = json_decode($args['input'], TRUE);
   }
   if (empty($input) || empty($input['features'])) return metageo_error("unable to parse input.");
- 
+
+  if (metageo_is_cli() && !empty($args['progress']) && file_exists('S8f_Progress.php')) {
+    require_once 'S8f_Progress.php';
+    $p = new S8f_Progress(count($input['features']));
+  }
   foreach ($input['features'] as $feature) {
     if ($feature['type'] == 'FeatureCollection') {
       foreach ($feature['features'] as $sub_feature) {
@@ -37,6 +41,9 @@ function metageo_do_insert($args) {
     }
     else {
       metageo_save_feature($feature, $args['name']);
+    }
+    if (isset($p)) {
+      $p->output();
     }
   }
 
