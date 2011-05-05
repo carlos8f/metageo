@@ -140,7 +140,7 @@ function metageo_do_find($args) {
     $ret['features'] = metageo_find_within($conditions, $args);
   }
   else {
-    $fields = array('_id' => 0);
+    $fields = array();
     if (!empty($args['no-geometry'])) {
       $fields['geometry'] = 0;
     }
@@ -158,6 +158,7 @@ function metageo_do_find($args) {
           break;
         }
       }
+      $feature['_id'] = (string) $feature['_id'];
       $ret['features'][] = $feature;
     }
   }
@@ -198,8 +199,7 @@ function metageo_find_within($conditions, $args) {
       'bbox.1' => array('$lte' => $point[1] + $fuzzyness),
       'bbox.2' => array('$gte' => $point[0] - $fuzzyness),
       'bbox.3' => array('$gte' => $point[1] - $fuzzyness),
-    ),
-    array('_id' => 0)
+    )
   )->limit($db->features->count());
 
   foreach ($result as $feature) {
@@ -207,6 +207,7 @@ function metageo_find_within($conditions, $args) {
       // This name has already been found, skip.
       continue;
     }
+    $feature['_id'] = (string) $feature['_id'];
 
     // Test that the point is within the polygon.
     $wkt = metageo_geometry_to_wkt($feature['geometry']);
