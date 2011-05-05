@@ -31,6 +31,7 @@ if ($command != 'find' && !metageo_is_cli() && METAGEO_SECRET_KEY && (empty($_RE
 
 switch ($command) {
   case 'insert': $ret = metageo_do_insert($args); break;
+  case 'update': $ret = metageo_do_update($args); break;
   case 'find': $ret = metageo_do_find($args); break;
   case 'remove': $ret = metageo_do_remove($args); break;
   default: $ret = metageo_error("invalid command.");

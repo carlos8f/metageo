@@ -54,6 +54,21 @@ function metageo_do_insert($args) {
   return 'insert ok.';
 }
 
+function metageo_do_update($args) {
+  global $db;
+  if (empty($args['conditions'])) metageo_exit("conditions required.");
+  if (!$args['conditions'] = json_decode($args['conditions'], TRUE)) metageo_exit("unable to decode conditions.");
+  if (empty($args['update'])) metageo_exit("update array required.");
+  if (!$args['update'] = json_decode($args['update'], TRUE)) metageo_exit("unable to decode update array.");
+  $multiple = TRUE;
+  if (isset($args['conditions']['_id']) && is_string($args['conditions']['_id'])) {
+    $args['conditions']['_id'] = new MongoId($args['conditions']['_id']);
+    $multiple = FALSE;
+  }
+  $db->features->update($args['conditions'], array('$set' => $args['update']), array('multiple' => $multiple));
+  return 'update OK.';
+}
+
 function metageo_save_feature($feature, $name) {
   global $db;
   $feature += metageo_geometry_stats($feature['geometry']);
