@@ -8,14 +8,18 @@ ini_set('memory_limit', -1);
 if (!extension_loaded('mongo')) metageo_exit("requires mongo extension.");
 
 $connection_string = defined('METAGEO_CONNECTION_STRING') ? METAGEO_CONNECTION_STRING : 'mongodb://localhost';
-$mongo = new Mongo($connection_string);
-if (!$mongo) metageo_exit("couldn't connect to mongo!");
 
 if (isset($argv[0])) {
   $prog = basename(array_shift($argv), '.php');
 }
 else {
   $prog = basename(__FILE__, '.php');
+}
+try {
+  $mongo = new Mongo($connection_string, array('persist' => $prog));
+}
+catch (Exception $e) {
+  metageo_exit("couldn't connect to mongo!");
 }
 $db = $mongo->$prog;
 
