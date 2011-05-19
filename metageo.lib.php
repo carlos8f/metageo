@@ -55,6 +55,12 @@ function metageo_do_insert($args) {
     }
   }
   else {
+    if (metageo_is_cli() && !empty($args['progress']) && file_exists('S8f_Progress.php')) {
+      require_once 'S8f_Progress.php';
+      $count = shell_exec('wc -l '. $args['file'] .' | awk \'{print $1}\'');
+      $p = new S8f_Progress($count);
+    }
+
     while ($line = fgets($fp)) {
       $feature = json_decode($line, TRUE);
       if (!$feature) {
