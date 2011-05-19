@@ -17,33 +17,62 @@ function metageo_do_insert($args) {
       if ($ret) return metageo_error("unable to convert input file.");
       $args['file'] = $tmp;
     }
-    $raw = file_get_contents($args['file']);
-    $input = json_decode($raw, TRUE);
-    if (empty($input)) {
-      $raw = utf8_encode($raw);
+    if (!empty($args['chunked'])) {
+      $fp = fopen($args['file'], 'rb');
+    }
+    else {
+      $raw = file_get_contents($args['file']);
       $input = json_decode($raw, TRUE);
+      if (empty($input)) {
+        $raw = utf8_encode($raw);
+        $input = json_decode($raw, TRUE);
+      }
     }
   }
   elseif (!empty($args['input'])) {
     $input = json_decode($args['input'], TRUE);
   }
-  if (empty($input) || empty($input['features'])) return metageo_error("unable to parse input.");
+  if (empty($args['chunked'])) {
+    if (empty($input) || empty($input['features'])) return metageo_error("unable to parse input.");
 
-  if (metageo_is_cli() && !empty($args['progress']) && file_exists('S8f_Progress.php')) {
-    require_once 'S8f_Progress.php';
-    $p = new S8f_Progress(count($input['features']));
-  }
-  foreach ($input['features'] as $feature) {
-    if ($feature['type'] == 'FeatureCollection') {
-      foreach ($feature['features'] as $sub_feature) {
-        metageo_save_feature($sub_feature, $args['name']);
+    if (metageo_is_cli() && !empty($args['progress']) && file_exists('S8f_Progress.php')) {
+      require_once 'S8f_Progress.php';
+      $p = new S8f_Progress(count($input['features']));
+    }
+    
+    foreach ($input['features'] as $feature) {
+      if ($feature['type'] == 'FeatureCollection') {
+        foreach ($feature['features'] as $sub_feature) {
+          metageo_save_feature($sub_feature, $args['name']);
+        }
+      }
+      else {
+        metageo_save_feature($feature, $args['name']);
+      }
+      if (isset($p)) {
+        $p->output();
       }
     }
-    else {
-      metageo_save_feature($feature, $args['name']);
-    }
-    if (isset($p)) {
-      $p->output();
+  }
+  else {
+    while ($line = fgets($fp)) {
+      $feature = json_decode($line, TRUE);
+      if (!$feature) {
+        $feature = json_decode(utf8_encode($line), TRUE);
+      }
+      if ($feature) {
+        if ($feature['type'] == 'FeatureCollection') {
+          foreach ($feature['features'] as $sub_feature) {
+            metageo_save_feature($sub_feature, $args['name']);
+          }
+        }
+        else {
+          metageo_save_feature($feature, $args['name']);
+        }
+      }
+      if (isset($p)) {
+        $p->output();
+      }
     }
   }
 
