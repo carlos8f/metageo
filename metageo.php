@@ -17,6 +17,7 @@ else {
 }
 try {
   $mongo = new Mongo($connection_string, array('persist' => '1'));
+  $mongo->setSlaveOkay(TRUE);
 }
 catch (Exception $e) {
   metageo_exit("couldn't connect to mongo!");
