@@ -16,7 +16,7 @@ else {
   $prog = basename(__FILE__, '.php');
 }
 try {
-  $mongo = new Mongo($connection_string, array('persist' => $prog));
+  $mongo = new Mongo($connection_string, array('persist' => '1'));
 }
 catch (Exception $e) {
   metageo_exit("couldn't connect to mongo!");
